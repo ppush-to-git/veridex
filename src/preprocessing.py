@@ -54,7 +54,7 @@ def assess_quality(image: np.ndarray) -> QualityReport:
         blur_score=sharpness,
         brightness=brightness,
         glare_ratio=glare,
-        overall="ACCEPTABLE" if not warnings else "REVIEW",
+        overall="ACCEPTABLE" if not warnings else "REVIEW: Might have problems.",
         warnings=warnings,
     )
 
