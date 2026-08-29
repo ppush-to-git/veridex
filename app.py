@@ -1,37 +1,59 @@
-"""Streamlit UI for Stage 1: document ingestion, quality assessment, and OCR extraction."""
+"""Streamlit UI for the current document-screening stage."""
+
 import streamlit as st
 
-from src.preprocessing import assess_quality, load_image, preprocess_for_display
+from src.preprocessing import (
+    assess_quality,
+    load_image,
+    preprocess_for_display,
+)
 from src.ocr import extract_fields
 
-st.set_page_config(page_title="AI Document Screening", page_icon="🪪", layout="wide")
-st.title("AI Fake Identity & Document Screening")
-st.caption("Stage 1: document ingestion, image-quality assessment, and OCR field extraction")
 
-uploaded = st.file_uploader("Upload a document image", type=["jpg", "jpeg", "png", "webp"])
+st.set_page_config(
+    page_title="AI Document Screening",
+    page_icon="🪪",
+    layout="wide",
+)
+
+st.title("AI Fake Identity & Document Screening")
+st.caption("Stage 1: quality assessment, segmented OCR, and photo extraction")
+
+uploaded = st.file_uploader(
+    "Upload a document image",
+    type=["jpg", "jpeg", "png", "webp"],
+)
+
 if uploaded is None:
     st.info("Upload a document image to begin.")
     st.stop()
 
 image = load_image(uploaded.getvalue())
+
 if image is None:
     st.error("Could not read this image.")
     st.stop()
 
+# Quality assessment and preprocessing.
 report = assess_quality(image)
 processed = preprocess_for_display(image)
 
 left, right = st.columns(2)
+
 with left:
     st.subheader("Original")
     st.image(image, channels="BGR", width="stretch")
+
 with right:
     st.subheader("Preprocessed preview")
     st.image(processed, channels="GRAY", width="stretch")
 
 st.divider()
+
 st.subheader("Document Quality")
+
 c1, c2, c3, c4 = st.columns(4)
+
 c1.metric("Resolution", f"{report.width} × {report.height}")
 c2.metric("Blur score", f"{report.blur_score:.1f}")
 c3.metric("Brightness", f"{report.brightness:.1f}")
@@ -47,40 +69,63 @@ if report.warnings:
     for warning in report.warnings:
         st.write(f"- {warning}")
 
-st.caption("Quality thresholds are heuristics for now and will be calibrated on our dataset.")
-
 st.divider()
+
 st.subheader("OCR Extraction")
 
 with st.spinner("Running OCR..."):
     ocr_result = extract_fields(image)
 
-if ocr_result.method == "mrz":
-    st.success("Extraction method: MRZ (machine-readable zone) — high confidence")
-elif ocr_result.method == "generic":
-    st.info("Extraction method: keyword matching — no MRZ found, lower confidence")
-else:
-    st.warning("No structured fields could be extracted. Showing raw OCR text only.")
+# ---------------------------------------------------------------
+# EXTRACTED PHOTO
+# ---------------------------------------------------------------
 
-field_col, raw_col = st.columns(2)
-with field_col:
-    st.write("**Extracted fields**")
-    if ocr_result.fields:
-        st.table(
-            {"Field": list(ocr_result.fields.keys()), "Value": list(ocr_result.fields.values())}
+photo_region = ocr_result.fields.get("_photo_region")
+
+if photo_region is not None:
+    st.subheader("Extracted Photo")
+
+    photo_col, info_col = st.columns([1, 3])
+
+    with photo_col:
+        st.image(
+            photo_region,
+            channels="BGR",
+            width=220,
         )
-    else:
-        st.write("No fields extracted.")
 
-with raw_col:
-    st.write("**Raw OCR text**")
-    st.text_area("raw_text", ocr_result.raw_text, height=250, label_visibility="collapsed")
-    if ocr_result.mrz_lines:
-        st.write("**Detected MRZ lines**")
-        for line in ocr_result.mrz_lines:
-            st.code(line)
+    with info_col:
+        st.info(
+            "Photo region extracted. "
+            "Face detection and face verification will be added later."
+        )
 
-st.caption(
-    "OCR uses Tesseract. MRZ parsing follows ICAO 9303 TD3 (passport) format; "
-    "non-MRZ documents fall back to keyword-based regex extraction."
+# ---------------------------------------------------------------
+# EXTRACTED TEXT FIELDS
+# ---------------------------------------------------------------
+
+st.subheader("Extracted Fields")
+
+display_fields = {
+    key: value
+    for key, value in ocr_result.fields.items()
+    if key != "_photo_region"
+}
+
+if display_fields:
+    st.table(
+        {
+            "Field": list(display_fields.keys()),
+            "Value": list(display_fields.values()),
+        }
+    )
+else:
+    st.write("No fields extracted.")
+
+st.subheader("Raw OCR Summary")
+st.text_area(
+    "raw_text",
+    ocr_result.raw_text,
+    height=200,
+    label_visibility="collapsed",
 )
