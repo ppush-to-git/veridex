@@ -1,61 +1,167 @@
 # AI-Based Fake Identity & Document Screening System
 
-Stage 1 prototype: document upload → image quality check → OCR field extraction.
+An AI-based document screening platform designed to assist border-security personnel in detecting forged or tampered identity and travel documents.
 
-## What's implemented so far
+## Overview
 
-- **`src/preprocessing.py`** — image loading, blur/brightness/glare quality checks, CLAHE preview.
-- **`src/ocr.py`** — OCR text extraction (Tesseract) + structured field parsing:
-  - If the document has an **MRZ** (passports, most visas), fields are parsed from the
-    standardized ICAO 9303 TD3 machine-readable zone — this is fast and reliable.
-  - Otherwise, a **regex/keyword fallback** looks for labeled fields ("Name:", "DOB:", etc.)
-    in the OCR text — used for national IDs, licenses, permits.
-- **`app.py`** — Streamlit UI wiring both stages together.
+Veridex analyzes identity documents such as passports and national IDs and assists with:
 
-## Local setup
+- OCR-based information extraction
+- Document validation
+- Tampering and forgery detection
+- Face verification
+- Risk assessment
 
-1. Install the Tesseract OCR engine (system binary, not just the Python wrapper):
-   - **Windows:** download installer from https://github.com/UB-Mannheim/tesseract/wiki
-   - **Mac:** `brew install tesseract`
-   - **Linux/Debian/Ubuntu:** `sudo apt-get install tesseract-ocr`
+The prototype currently focuses on a defined set of document templates, with the architecture intended to support additional document types later.
 
-2. Create a virtual environment and install Python deps:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate   # Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
+## Current Features
 
-3. Run the app:
-   ```bash
-   streamlit run app.py
-   ```
+### OCR Extraction
 
-4. On Windows, if Tesseract isn't on your PATH, add this near the top of `src/ocr.py`:
-   ```python
-   pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-   ```
+Extracts text from document images using OCR and provides:
 
-## Deploying (Streamlit Community Cloud)
+- Detected text
+- Confidence scores
+- Text locations / bounding boxes
+- Structured document fields
+- MRZ extraction for supported passports
 
-`packages.txt` is already included — Streamlit Cloud reads it and installs `tesseract-ocr`
-automatically as a system package, in addition to `requirements.txt` for Python deps.
+### Image Quality Analysis
 
-## Project structure
+Performs basic image-quality checks such as:
 
+- Blur / sharpness
+- Brightness
+- Glare
+
+These checks are treated as image-quality indicators rather than the main forgery detector.
+
+### Document Validation
+
+Extracted fields can be checked against document-specific formats and rules, such as:
+
+- Required fields
+- Date formats
+- Identifier formats
+- Expiry dates
+
+### Tampering Detection
+
+The main AI component of the system.
+
+The current prototype investigates localized manipulation in regions such as:
+
+- Name
+- Date of birth
+- Personal/document number
+- Photograph
+
+A transfer-learning vision model is being used to classify suspicious document regions.
+
+### Face Verification
+
+Planned module for comparing the photograph on the document with the presented person's face.
+
+### Risk Scoring
+
+Planned layer that combines OCR, validation, tampering, face verification, and image-quality results into an overall risk assessment.
+
+## Project Pipeline
+
+```text
+Document Image
+      ↓
+Image Quality Check
+      ↓
+Document / Template Selection
+      ↓
+OCR Extraction
+      ↓
+Field Validation
+      ↓
+Tampering Detection
+      ↓
+Face Verification
+      ↓
+Risk Assessment
+      ↓
+Screening Decision
 ```
+
+## Prototype Scope
+
+The current prototype focuses on a limited number of document templates so that each supported format can be processed and validated reliably.
+
+The main focus of the project is detecting document tampering and providing an explainable screening result.
+
+## Project Structure
+
+```text
 .
 ├── app.py
 ├── requirements.txt
 ├── packages.txt
-└── src/
-    ├── preprocessing.py
-    └── ocr.py
+├── dataset/
+├── models/
+├── src/
+└── ...
 ```
 
-## Next stages (roadmap)
+## Local Setup
 
-- Module 2: Document validation (field-format/rule checks against document standards)
-- Module 3: Tampering detection (photo replacement, text manipulation, stamp forgery, metadata analysis)
-- Module 4: Face verification (match document photo to live capture)
-- Risk scoring layer combining all module outputs
+### 1. Install Tesseract
+
+Tesseract OCR must be installed separately from the Python package.
+
+**Windows:** Download the Tesseract installer from the UB Mannheim distribution.
+
+**macOS:**
+
+```bash
+brew install tesseract
+```
+
+**Linux/Debian/Ubuntu:**
+
+```bash
+sudo apt-get install tesseract-ocr
+```
+
+### 2. Install Python Dependencies
+
+```bash
+python -m venv venv
+```
+
+**Windows:**
+
+```bash
+venv\Scripts\activate
+```
+
+**macOS/Linux:**
+
+```bash
+source venv/bin/activate
+```
+
+Then:
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Run the Application
+
+```bash
+streamlit run app.py
+```
+
+## Development Roadmap
+
+- Improve tampering detection and localization
+- Complete document validation
+- Add face verification
+- Integrate all module outputs into a unified risk score
+- Add audit/logging support
+- Expand support for additional document templates
