@@ -51,7 +51,7 @@ _KEYWORDS = {
         "identity card", "national id", "national identity",
         "id no", "id number", "personal number", "citizen",
         "leternjoftim",  # albanian
-        "aadhaar", "nid", "cnic", "resident",
+        "aadhaar", "nid", "cnic", "resident","government of india"
     ],
     DocType.DRIVING_LICENCE: [
         "driving licence", "driving license", "driver license",

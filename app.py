@@ -113,7 +113,7 @@ col_doc, col_evidence, col_face = st.columns([1.2, 1.0, 0.8])
 
 with col_doc:
     st.subheader("Document")
-    st.image(image, channels="BGR", use_column_width=True)
+    st.image(image, channels="BGR", use_container_width=True)
     st.caption(
         f"Type: **{result.classification.doc_type.value}** "
         f"(confidence {result.classification.confidence:.0%})"
@@ -122,7 +122,7 @@ with col_doc:
 with col_evidence:
     st.subheader("Tamper heat-map")
     if result.tampering.heatmap is not None:
-        st.image(result.tampering.heatmap, channels="BGR", use_column_width=True)
+        st.image(result.tampering.heatmap, channels="BGR", use_container_width=True)
     else:
         st.write("Not available.")
 
@@ -135,7 +135,7 @@ with col_face:
         and getattr(_fc, "size", 0) > 0
     )
     if _has_crop:
-        st.image(_fc, channels="BGR", use_column_width=True)
+        st.image(_fc, channels="BGR", use_container_width=True)
         st.caption(f"method: `{result.face.method or 'unknown'}`")
         if result.face.similarity is not None:
             pct = result.face.similarity * 100
