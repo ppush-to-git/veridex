@@ -1,7 +1,0 @@
-path: data/tampering_dataset
-train: images/train
-val: images/val
-test: images/test
-
-names:
-  0: tampered_character
