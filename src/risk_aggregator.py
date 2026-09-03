@@ -47,6 +47,12 @@ class ScreeningResult:
     face: FaceResult
     issues: List[Issue] = field(default_factory=list)   # ALL issues, aggregated
 
+    # Specialized model output is kept separate from the traditional
+    # preprocessing/tampering pipeline so the UI can show both signals.
+    model_risk_score: float = 0.0
+    preprocessing_risk_score: float = 0.0
+    model_data: Dict[str, Any] = field(default_factory=dict)
+
     def issues_by_module(self) -> Dict[str, List[Issue]]:
         out: Dict[str, List[Issue]] = {}
         for i in self.issues:
@@ -94,6 +100,14 @@ class ScreeningResult:
             "face": face_dict,
             "issues": [i.to_dict() for i in self.issues],
             "tamper_signals": {k: round(v, 3) for k, v in self.tampering.signal_scores.items()},
+
+            # Keep the two evidence sources separate in exported results.
+            "risk_breakdown": {
+                "preprocessing_risk": round(self.preprocessing_risk_score, 1),
+                "model_risk": round(self.model_risk_score, 1),
+                "combined_risk": round(self.risk_score, 1),
+            },
+            "specialized_model": self.model_data,
         }
 
 
@@ -110,15 +124,77 @@ _HARD_REJECT_CODES = {
 }
 
 
-def _compute_risk_score(issues: List[Issue], tamper_score: float) -> float:
-    """Combine severity weights with the tampering signal score.
+def _compute_risk_scores(
+    issues: List[Issue],
+    tamper_score: float,
+    model_data: Optional[Dict[str, Any]] = None,
+) -> tuple[float, float, float]:
+    """Compute separate preprocessing and specialized-model risk scores.
 
-    * Sum of severity weights, capped at 100.
-    * Tampering adds up to +40 based on the max signal.
+    preprocessing_risk:
+        Existing issue/severity score + existing image-tampering signals.
+
+    model_risk:
+        Risk contributed by the specialized YOLO/MobileNet model only.
+
+    combined_risk:
+        Conservative combination of both sources. A strong model signal is
+        not allowed to disappear just because the traditional preprocessing
+        pipeline is quiet.
     """
-    base = sum(i.weight() for i in issues)
-    tamper_bonus = tamper_score * 40.0
-    return float(min(100.0, base + tamper_bonus))
+    model_data = model_data or {}
+
+    # Existing pipeline = preprocessing/hand-crafted evidence.
+    # Exclude specialized-model issues if a caller later adds any.
+    base = sum(
+        i.weight()
+        for i in issues
+        if i.module not in {"specialized_yolo", "specialized_model", "model"}
+    )
+    preprocessing_risk = float(
+        min(100.0, base + float(tamper_score) * 40.0)
+    )
+
+    model_risk = 0.0
+
+    model_type = str(model_data.get("type", "")).lower()
+    detections = model_data.get("detections") or []
+
+    # YOLO: use the strongest localized detection.
+    if model_type == "yolo" or detections:
+        confidences = []
+        for det in detections:
+            try:
+                confidences.append(float(det.get("confidence", 0.0)))
+            except (AttributeError, TypeError, ValueError):
+                pass
+
+        if confidences:
+            strongest = max(0.0, min(1.0, max(confidences)))
+            # 0.25 is the inference threshold, so scale useful detections
+            # into a 0-100 model-risk signal.
+            model_risk = strongest * 100.0
+
+    # MobileNet: probability that the document is forged.
+    if model_type in {"mobilenet", "mobilenetv3", "mobile_net"}:
+        try:
+            forged_prob = float(model_data.get("forged_probability", 0.0))
+        except (TypeError, ValueError):
+            forged_prob = 0.0
+
+        # Accept either 0..1 or 0..100 input.
+        if forged_prob > 1.0:
+            forged_prob /= 100.0
+        model_risk = max(0.0, min(1.0, forged_prob)) * 100.0
+
+    # If no model was selected/available, model_risk stays exactly 0.
+    # Combined score gives the model a meaningful contribution while
+    # preserving the existing risk behavior.
+    combined_risk = float(
+        min(100.0, preprocessing_risk * 0.20 + model_risk * 0.80)
+    )
+
+    return preprocessing_risk, model_risk, combined_risk
 
 
 def _decide(risk: float, issues: List[Issue]) -> tuple[Decision, str]:
@@ -144,6 +220,7 @@ def screen_document(
     image_bgr: np.ndarray,
     image_bytes: Optional[bytes] = None,
     live_face_bgr: Optional[np.ndarray] = None,
+    specialized_model_data: Optional[Dict[str, Any]] = None,
 ) -> ScreeningResult:
     """End-to-end screening pipeline.
 
@@ -225,8 +302,27 @@ def screen_document(
         all_issues.extend(verify.issues)
 
     # 7. Score + decision
-    risk = _compute_risk_score(all_issues, tampering.tamper_score)
+    #
+    # The specialized model is deliberately NOT folded into the existing
+    # issue list. This keeps traditional/preprocessing evidence and learned
+    # model evidence independently visible and auditable.
+    preprocessing_risk, model_risk, risk = _compute_risk_scores(
+        all_issues,
+        tampering.tamper_score,
+        specialized_model_data,
+    )
+
     decision, rationale = _decide(risk, all_issues)
+
+    # Add a model-specific rationale without creating a duplicate Issue.
+    if model_risk >= 80:
+        rationale = (
+            f"{rationale}; specialized model risk {model_risk:.1f}/100"
+        )
+    elif model_risk >= 50:
+        rationale = (
+            f"{rationale}; specialized model risk {model_risk:.1f}/100"
+        )
 
     return ScreeningResult(
         decision=decision,
@@ -239,4 +335,7 @@ def screen_document(
         tampering=tampering,
         face=face,
         issues=all_issues,
+        model_risk_score=model_risk,
+        preprocessing_risk_score=preprocessing_risk,
+        model_data=specialized_model_data or {},
     )
